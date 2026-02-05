@@ -26,4 +26,5 @@ jobs:
           LONGITUD: ${{ secrets.LONGITUD }}
           OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
           MQTT_BROKER: ${{ secrets.MQTT_BROKER }}
+          MQTT_PREFIX: ${{ secrets.MQTT_PREFIX }}
         run: python clima.py
