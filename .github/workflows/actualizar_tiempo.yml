@@ -1,0 +1,29 @@
+name: Actualizar Awtrix
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Ejecutar cada 15 minutos
+  workflow_dispatch:        # Permite ejecutarlo manualmente botón
+
+jobs:
+  run-weather-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v3
+
+      - name: Instalar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar librerías
+        run: pip install requests paho-mqtt
+
+      - name: Ejecutar script
+        env:
+          LATITUD: ${{ secrets.LATITUD }}
+          LONGITUD: ${{ secrets.LONGITUD }}
+          OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
+          MQTT_BROKER: ${{ secrets.MQTT_BROKER }}
+        run: python clima.py
