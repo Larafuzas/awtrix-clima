@@ -2,7 +2,8 @@ name: Actualizar Awtrix
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Ejecutar cada 15 minutos
+    # Ejecutar en el minuto 7, 22, 37 y 52 de cada hora
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:        # Permite ejecutarlo manualmente botón
 
 jobs:
