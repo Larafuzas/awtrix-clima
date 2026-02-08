@@ -1,8 +1,8 @@
 import os
 import requests
 import json
+import time
 import paho.mqtt.client as mqtt
-from datetime import datetime, timezone, timedelta
 
 # 1. OBTENER VARIABLES SECRETAS
 LAT = os.environ["LATITUD"]
@@ -29,9 +29,9 @@ icon_map = {
     "11d": "2288", "11n": "2288",
     # NIEVE
     "13d": "2289", "13n": "2289",
-    # NIEBLA (Mist/Fog)
+    # NIEBLA
     "50d": "59539","50n": "59539",
-    # ESPECIAL: VIENTO
+    # VIENTO (Si hay alerta)
     "wind": "55032"
 }
 
@@ -40,43 +40,44 @@ def get_weather():
     response = requests.get(url)
     data = response.json()
     
-    # Datos básicos
+    # --- DATOS BÁSICOS ---
     temp = round(data["main"]["temp"])
-    icon_code = data["weather"][0]["icon"]
-    weather_id = data["weather"][0]["id"]
+    weather_id = data["weather"][0]["id"]      # ID numérico (ej: 800, 500)
+    original_icon = data["weather"][0]["icon"] # Icono original (ej: "04n")
     
-    # --- LÓGICA DE TIEMPO (Hora local exacta) ---
-    # Usamos el 'timezone' que nos da la API para saber tu hora real
-    utc_now = datetime.now(timezone.utc)
-    local_time = utc_now + timedelta(seconds=data.get("timezone", 0))
+    # --- DATOS ASTRONÓMICOS ---
+    # OpenWeather nos da el timestamp unix del amanecer y anochecer de HOY
+    sunrise = data["sys"]["sunrise"]
+    sunset = data["sys"]["sunset"]
+    now = data["dt"] # Hora actual del reporte
     
-    # --- LÓGICA 1: DETECCIÓN DE VIENTO POR CÓDIGO ---
-    # Buscamos códigos específicos de viento en la documentación de OWM:
-    # 771: Squalls (Ráfagas)
-    # 781: Tornado
-    # 9xx: Códigos adicionales (905=Windy, 951-962=Beaufort Scale)
+    # --- LÓGICA 1: ¿ES DE DÍA O DE NOCHE? (Matemática pura) ---
+    if sunrise <= now < sunset:
+        suffix = 'd' # Es de día
+    else:
+        suffix = 'n' # Es de noche
+        
+    # --- LÓGICA 2: CONSTRUCCIÓN DEL CÓDIGO ---
+    # Cogemos el código base (los dos primeros números, ej: "02") y le pegamos nuestro sufijo calculado
+    base_code = original_icon[:2] # "01", "02", "10"...
+    calculated_icon_key = f"{base_code}{suffix}"
+    
+    # --- LÓGICA 3: EXCEPCIÓN DE VIENTO ---
+    # Si hay códigos de viento fuerte (771, 781, 9xx), esto tiene prioridad sobre el sol/luna
     is_windy = False
     if weather_id == 771 or weather_id == 781:
         is_windy = True
-    elif 900 <= weather_id <= 962: # Rango completo de códigos 'Extreme' y 'Additional'
+    elif 900 <= weather_id <= 962:
         is_windy = True
-
-    # --- LÓGICA 2: SELECCIÓN DE ICONO ---
+        
     if is_windy:
-        # Prioridad absoluta: Si hay código de viento, ponemos el icono de viento
-        key_final = "wind"
+        final_key = "wind"
     else:
-        # Si no es viento, usamos el código visual normal (01d, 02n, etc.)
-        key_final = icon_code
+        final_key = calculated_icon_key
 
-        # --- LÓGICA 3: FORZAR DÍA A PARTIR DE LAS 07:00 ---
-        # Solo aplicamos esto si NO es viento (el viento no tiene día/noche)
-        # Si la hora local es 7 o mayor, cambiamos 'n' (noche) por 'd' (día)
-        if local_time.hour >= 7:
-            key_final = key_final.replace('n', 'd')
-
-    # Recuperar el ID de Awtrix del mapa
-    awtrix_icon = icon_map.get(key_final, "2283")
+    # Buscamos el ID de Awtrix
+    # Si por lo que sea la clave no existe, usamos la nube (2283) por defecto
+    awtrix_icon = icon_map.get(final_key, "2283")
     
     return temp, awtrix_icon
 
