@@ -29,9 +29,9 @@ icon_map = {
     "11d": "2288", "11n": "2288",
     # NIEVE
     "13d": "2289", "13n": "2289",
-    # NIEBLA
+    # NIEBLA (Mist/Fog)
     "50d": "59539","50n": "59539",
-    # NUEVO: VIENTO
+    # ESPECIAL: VIENTO
     "wind": "55032"
 }
 
@@ -42,30 +42,43 @@ def get_weather():
     
     # Datos básicos
     temp = round(data["main"]["temp"])
-    code = data["weather"][0]["icon"]
-    wind_speed = data["wind"]["speed"] # Metros por segundo
+    icon_code = data["weather"][0]["icon"]
+    weather_id = data["weather"][0]["id"]
     
-    # --- LÓGICA DE TIEMPO ---
-    # Calculamos la hora local real usando el 'timezone' de la API
+    # --- LÓGICA DE TIEMPO (Hora local exacta) ---
+    # Usamos el 'timezone' que nos da la API para saber tu hora real
     utc_now = datetime.now(timezone.utc)
     local_time = utc_now + timedelta(seconds=data.get("timezone", 0))
     
-    # REGLA 1: Forzar Día a partir de las 07:00 AM
-    # Si son las 7 o más, cambiamos cualquier 'n' (noche) por 'd' (día)
-    if local_time.hour >= 7:
-        code = code.replace('n', 'd')
+    # --- LÓGICA 1: DETECCIÓN DE VIENTO POR CÓDIGO ---
+    # Buscamos códigos específicos de viento en la documentación de OWM:
+    # 771: Squalls (Ráfagas)
+    # 781: Tornado
+    # 9xx: Códigos adicionales (905=Windy, 951-962=Beaufort Scale)
+    is_windy = False
+    if weather_id == 771 or weather_id == 781:
+        is_windy = True
+    elif 900 <= weather_id <= 962: # Rango completo de códigos 'Extreme' y 'Additional'
+        is_windy = True
 
-    # --- LÓGICA DE VIENTO ---
-    # REGLA 2: Si el viento supera 5.5 m/s (~20 km/h), priorizamos icono de viento
-    if wind_speed > 5.5:
-        icon_key = "wind"
+    # --- LÓGICA 2: SELECCIÓN DE ICONO ---
+    if is_windy:
+        # Prioridad absoluta: Si hay código de viento, ponemos el icono de viento
+        key_final = "wind"
     else:
-        icon_key = code
+        # Si no es viento, usamos el código visual normal (01d, 02n, etc.)
+        key_final = icon_code
+
+        # --- LÓGICA 3: FORZAR DÍA A PARTIR DE LAS 07:00 ---
+        # Solo aplicamos esto si NO es viento (el viento no tiene día/noche)
+        # Si la hora local es 7 o mayor, cambiamos 'n' (noche) por 'd' (día)
+        if local_time.hour >= 7:
+            key_final = key_final.replace('n', 'd')
+
+    # Recuperar el ID de Awtrix del mapa
+    awtrix_icon = icon_map.get(key_final, "2283")
     
-    # Seleccionar ID final (si falla, usa nube 2283)
-    icon_id = icon_map.get(icon_key, "2283")
-    
-    return temp, icon_id
+    return temp, awtrix_icon
 
 def send_to_awtrix(temp, icon):
     payload = {
