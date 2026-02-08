@@ -16,70 +16,83 @@ TOPIC = f"{PREFIX}custom/tiempo"
 # 2. MAPEO DE ICONOS
 icon_map = {
     # SOL / LUNA
-    "01d": "2282", "01n": "962",
+    "01d": "2282", 
+    "01n": "12181", # <--- CAMBIO: Nueva Luna Despejada
+    
     # POCAS NUBES
     "02d": "67868","02n": "12195",
-    # NUBES
+    
+    # NUBES DISPERSAS / NUBLADO
     "03d": "2283", "03n": "2283",
     "04d": "2283", "04n": "2283",
+    
     # LLUVIA
     "09d": "53674","09n": "53674",
     "10d": "53674","10n": "53674",
+    
     # TORMENTA
     "11d": "2288", "11n": "2288",
+    
     # NIEVE
     "13d": "2289", "13n": "2289",
+    
     # NIEBLA
     "50d": "59539","50n": "59539",
-    # VIENTO (Si hay alerta)
+    
+    # VIENTO (Solo si hay alerta)
     "wind": "55032"
 }
 
 def get_weather():
-    url = f"https://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={API_KEY}&units=metric&lang=es"
-    response = requests.get(url)
-    data = response.json()
-    
-    # --- DATOS BÁSICOS ---
-    temp = round(data["main"]["temp"])
-    weather_id = data["weather"][0]["id"]      # ID numérico (ej: 800, 500)
-    original_icon = data["weather"][0]["icon"] # Icono original (ej: "04n")
-    
-    # --- DATOS ASTRONÓMICOS ---
-    # OpenWeather nos da el timestamp unix del amanecer y anochecer de HOY
-    sunrise = data["sys"]["sunrise"]
-    sunset = data["sys"]["sunset"]
-    now = data["dt"] # Hora actual del reporte
-    
-    # --- LÓGICA 1: ¿ES DE DÍA O DE NOCHE? (Matemática pura) ---
-    if sunrise <= now < sunset:
-        suffix = 'd' # Es de día
-    else:
-        suffix = 'n' # Es de noche
+    try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={API_KEY}&units=metric&lang=es"
+        response = requests.get(url)
+        response.raise_for_status() # Lanza error si la API falla
+        data = response.json()
         
-    # --- LÓGICA 2: CONSTRUCCIÓN DEL CÓDIGO ---
-    # Cogemos el código base (los dos primeros números, ej: "02") y le pegamos nuestro sufijo calculado
-    base_code = original_icon[:2] # "01", "02", "10"...
-    calculated_icon_key = f"{base_code}{suffix}"
-    
-    # --- LÓGICA 3: EXCEPCIÓN DE VIENTO ---
-    # Si hay códigos de viento fuerte (771, 781, 9xx), esto tiene prioridad sobre el sol/luna
-    is_windy = False
-    if weather_id == 771 or weather_id == 781:
-        is_windy = True
-    elif 900 <= weather_id <= 962:
-        is_windy = True
+        # --- DATOS BÁSICOS ---
+        temp = round(data["main"]["temp"])
+        weather_id = data["weather"][0]["id"]
+        original_icon = data["weather"][0]["icon"] # Ej: "01n"
         
-    if is_windy:
-        final_key = "wind"
-    else:
-        final_key = calculated_icon_key
+        # --- DATOS ASTRONÓMICOS (Orto y Ocaso de HOY) ---
+        sunrise = data["sys"]["sunrise"]
+        sunset = data["sys"]["sunset"]
+        now = data["dt"] # Hora actual del reporte
+        
+        # --- LÓGICA 1: DETERMINAR DÍA O NOCHE (Matemática) ---
+        # Si la hora actual está entre el amanecer y el anochecer -> Día
+        if sunrise <= now < sunset:
+            suffix = 'd' 
+        else:
+            suffix = 'n' 
+            
+        # --- LÓGICA 2: CONSTRUIR LA CLAVE DEL ICONO ---
+        # Cogemos el código numérico base (ej: "01" de "01n") y le pegamos el sufijo calculado
+        base_code = original_icon[:2] # "01", "02"...
+        calculated_key = f"{base_code}{suffix}"
+        
+        # --- LÓGICA 3: EXCEPCIÓN DE VIENTO ---
+        # Si hay códigos de viento fuerte, tienen prioridad
+        is_windy = False
+        if weather_id == 771 or weather_id == 781: # Squalls, Tornado
+            is_windy = True
+        elif 900 <= weather_id <= 962: # Códigos extremos/adicionales
+            is_windy = True
+            
+        if is_windy:
+            final_key = "wind"
+        else:
+            final_key = calculated_key
 
-    # Buscamos el ID de Awtrix
-    # Si por lo que sea la clave no existe, usamos la nube (2283) por defecto
-    awtrix_icon = icon_map.get(final_key, "2283")
-    
-    return temp, awtrix_icon
+        # Buscar el ID de Awtrix en nuestro mapa
+        awtrix_icon = icon_map.get(final_key, "2283") # 2283 es el fallback (nube)
+        
+        return temp, awtrix_icon
+        
+    except Exception as e:
+        print(f"Error obteniendo clima: {e}")
+        raise e
 
 def send_to_awtrix(temp, icon):
     payload = {
@@ -96,9 +109,5 @@ def send_to_awtrix(temp, icon):
     print(f"Enviado: {temp}°C con icono {icon}")
 
 if __name__ == "__main__":
-    try:
-        t, i = get_weather()
-        send_to_awtrix(t, i)
-    except Exception as e:
-        print(f"Error: {e}")
-        exit(1)
+    t, i = get_weather()
+    send_to_awtrix(t, i)
